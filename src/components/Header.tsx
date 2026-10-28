@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, Instagram, Phone, Lock, Sparkles, Check } from 'lucide-react';
+import { ShoppingBag, Instagram, Phone, Lock, Sparkles, Check, LogOut, UserCheck } from 'lucide-react';
 import { PublicStoreSettings } from '../types/store';
 
 interface HeaderProps {
@@ -7,8 +7,10 @@ interface HeaderProps {
   bagCount: number;
   onOpenBag: () => void;
   isAdmin: boolean;
+  userEmail?: string | null;
   onOpenAdmin: () => void;
   onExitAdmin: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,8 +18,10 @@ export const Header: React.FC<HeaderProps> = ({
   bagCount,
   onOpenBag,
   isAdmin,
+  userEmail,
   onOpenAdmin,
   onExitAdmin,
+  onLogout,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#FAF7F5]/95 backdrop-blur-md border-b border-[#EAE3DE] transition-all">
@@ -97,25 +101,32 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Zone 3: Actions - Bag and Admin Access */}
-        <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
           {isAdmin ? (
             <div className="flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#50121E] bg-[#F7EFE9] border border-[#50121E]/20 rounded-md">
-                <Check className="w-3.5 h-3.5 text-[#50121E]" />
-                Modo Lojista
-              </span>
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#50121E] bg-[#F7EFE9] border border-[#50121E]/20 rounded-md">
+                <UserCheck className="w-3.5 h-3.5 text-[#50121E]" />
+                <span className="truncate max-w-[140px]">{userEmail}</span>
+              </div>
               <button
-                onClick={onExitAdmin}
-                className="text-xs px-3 py-2 text-stone-600 hover:text-stone-900 border border-stone-300 rounded-lg transition-colors whitespace-nowrap"
+                onClick={onOpenAdmin}
+                className="text-xs px-2.5 py-1.5 bg-[#50121E] text-white hover:bg-[#681A28] rounded-lg transition-colors whitespace-nowrap font-medium"
               >
-                Ver como Cliente
+                Painel
+              </button>
+              <button
+                onClick={onLogout}
+                className="p-1.5 text-stone-500 hover:text-red-700 hover:bg-stone-100 rounded-lg transition-colors"
+                title="Sair da Conta de Administradora"
+              >
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
           ) : (
             <button
               onClick={onOpenAdmin}
               className="p-2 text-stone-500 hover:text-[#50121E] hover:bg-stone-100 rounded-lg transition-colors"
-              title="Acesso da Lojista (com senha)"
+              title="Acesso da Lojista (Autenticação Segura)"
             >
               <Lock className="w-4 h-4" />
             </button>

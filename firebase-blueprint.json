@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "product": {
+      "title": "Product",
+      "description": "Clothing piece in the boutique catalog",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "maxLength": 30 },
+        "name": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 50 },
+        "price": { "type": "number" },
+        "sizes": { "type": "array" },
+        "description": { "type": "string", "maxLength": 1000 },
+        "imageUrl": { "type": "string", "maxLength": 2000000 },
+        "status": { "type": "string", "enum": ["disponivel", "vendida", "reservada"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["code", "name", "category", "price", "status"]
+    },
+    "bag": {
+      "title": "BagRequest",
+      "description": "Customer try-on bag submitted from boutique",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string", "maxLength": 100 },
+        "customerPhone": { "type": "string", "maxLength": 50 },
+        "customerNotes": { "type": "string", "maxLength": 1000 },
+        "customerImage": { "type": "string", "maxLength": 2000000 },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["nova", "separada", "em_prova", "finalizada"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["customerName", "customerPhone", "items", "totalAmount", "status"]
+    },
+    "settings": {
+      "title": "StoreSettings",
+      "description": "Boutique contact and identity settings",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "maxLength": 100 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "aboutText": { "type": "string", "maxLength": 1000 },
+        "instagramHandle": { "type": "string", "maxLength": 100 },
+        "instagramUrl": { "type": "string", "maxLength": 500 },
+        "whatsappNumber": { "type": "string", "maxLength": 50 },
+        "whatsappFormatted": { "type": "string", "maxLength": 50 },
+        "logoUrl": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["brandName", "tagline", "whatsappNumber"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "product",
+      "description": "Catalog products visible to everyone, editable only by authorized admin"
+    },
+    "/bags/{bagId}": {
+      "schema": "bag",
+      "description": "Customer try-on bags created by customers, readable and manageable only by admin"
+    },
+    "/settings/store": {
+      "schema": "settings",
+      "description": "Store configuration and social links"
+    }
+  }
+}

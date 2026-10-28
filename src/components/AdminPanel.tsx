@@ -6,36 +6,44 @@ import {
   Plus,
   Trash2,
   Edit2,
-  CheckCircle,
-  Clock,
   MessageCircle,
-  ExternalLink,
-  Eye,
-  KeyRound,
   Save,
   Check,
   AlertCircle,
+  LogOut,
+  ShieldCheck,
+  UserCheck,
 } from 'lucide-react';
 import { Product, BagRequest, StoreSettings, BagStatus } from '../types/store';
+import {
+  db,
+  auth,
+  AUTHORIZED_ADMIN_EMAIL,
+  handleFirestoreError,
+  OperationType,
+} from '../lib/firebase';
+import { doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 
 interface AdminPanelProps {
   products: Product[];
   bags: BagRequest[];
   settings: StoreSettings;
-  adminToken: string;
+  userEmail?: string | null;
   onRefreshData: () => Promise<void>;
   onOpenProductModal: (product?: Product) => void;
   onCloseAdmin: () => void;
+  onLogout: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   products,
   bags,
   settings,
-  adminToken,
+  userEmail,
   onRefreshData,
   onOpenProductModal,
   onCloseAdmin,
+  onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<'products' | 'bags' | 'settings'>('products');
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,7 +57,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [instagramUrl, setInstagramUrl] = useState(settings.instagramUrl);
   const [whatsappNumber, setWhatsappNumber] = useState(settings.whatsappNumber);
   const [whatsappFormatted, setWhatsappFormatted] = useState(settings.whatsappFormatted);
-  const [newPassword, setNewPassword] = useState('');
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
@@ -57,19 +64,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleToggleProductStatus = async (product: Product) => {
     const nextStatus = product.status === 'vendida' ? 'disponivel' : 'vendida';
     try {
-      const res = await fetch(`/api/admin/products/${product.id}/status`, {
+      // 1. Update in Firestore with security rules validation
+      const productRef = doc(db, 'products', product.id);
+      await updateDoc(productRef, {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+
+      // 2. Sync with local backend
+      const token = await auth.currentUser?.getIdToken();
+      await fetch(`/api/admin/products/${product.id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: nextStatus }),
       });
-      if (res.ok) {
-        await onRefreshData();
-      }
-    } catch (err) {
+
+      await onRefreshData();
+    } catch (err: any) {
       console.error('Error toggling product status:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `products/${product.id}`);
     }
   };
 
@@ -79,34 +95,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
     try {
-      const res = await fetch(`/api/admin/products/${productId}`, {
+      // 1. Delete from Firestore
+      const productRef = doc(db, 'products', productId);
+      await deleteDoc(productRef);
+
+      // 2. Sync with local backend
+      const token = await auth.currentUser?.getIdToken();
+      await fetch(`/api/admin/products/${productId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        await onRefreshData();
-      }
-    } catch (err) {
+
+      await onRefreshData();
+    } catch (err: any) {
       console.error('Error deleting product:', err);
+      handleFirestoreError(err, OperationType.DELETE, `products/${productId}`);
     }
   };
 
   // Update bag request status
   const handleUpdateBagStatus = async (bagId: string, status: BagStatus) => {
     try {
-      const res = await fetch(`/api/admin/bags/${bagId}/status`, {
+      // 1. Update in Firestore
+      const bagRef = doc(db, 'bags', bagId);
+      await updateDoc(bagRef, { status });
+
+      // 2. Sync with local backend
+      const token = await auth.currentUser?.getIdToken();
+      await fetch(`/api/admin/bags/${bagId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status }),
       });
-      if (res.ok) {
-        await onRefreshData();
-      }
-    } catch (err) {
+
+      await onRefreshData();
+    } catch (err: any) {
       console.error('Error updating bag status:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `bags/${bagId}`);
     }
   };
 
@@ -114,15 +142,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteBag = async (bagId: string) => {
     if (!window.confirm(`Excluir o registro da sacola #${bagId}?`)) return;
     try {
-      const res = await fetch(`/api/admin/bags/${bagId}`, {
+      // 1. Delete from Firestore
+      const bagRef = doc(db, 'bags', bagId);
+      await deleteDoc(bagRef);
+
+      // 2. Sync with local backend
+      const token = await auth.currentUser?.getIdToken();
+      await fetch(`/api/admin/bags/${bagId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        await onRefreshData();
-      }
-    } catch (err) {
+
+      await onRefreshData();
+    } catch (err: any) {
       console.error('Error deleting bag:', err);
+      handleFirestoreError(err, OperationType.DELETE, `bags/${bagId}`);
     }
   };
 
@@ -133,35 +167,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setSettingsSuccess(false);
 
     try {
-      const res = await fetch('/api/admin/settings', {
+      const updatedSettings = {
+        brandName: brandName.trim(),
+        tagline: tagline.trim(),
+        aboutText: aboutText.trim(),
+        instagramHandle: instagramHandle.trim(),
+        instagramUrl: instagramUrl.trim(),
+        whatsappNumber: whatsappNumber.trim(),
+        whatsappFormatted: whatsappFormatted.trim(),
+        logoUrl: settings.logoUrl,
+      };
+
+      // 1. Save to Firestore
+      const settingsRef = doc(db, 'settings', 'store');
+      await setDoc(settingsRef, updatedSettings, { merge: true });
+
+      // 2. Sync with backend
+      const token = await auth.currentUser?.getIdToken();
+      await fetch('/api/admin/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          brandName,
-          tagline,
-          aboutText,
-          instagramHandle,
-          instagramUrl,
-          whatsappNumber,
-          whatsappFormatted,
-          newPassword: newPassword.trim() || undefined,
-        }),
+        body: JSON.stringify(updatedSettings),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Erro ao salvar configurações.');
-      }
-
       setSettingsSuccess(true);
-      setNewPassword('');
       await onRefreshData();
       setTimeout(() => setSettingsSuccess(false), 2500);
     } catch (err: any) {
-      setSettingsError(err.message || 'Erro ao salvar.');
+      console.error('Error saving settings:', err);
+      setSettingsError(err.message || 'Erro ao salvar configurações.');
     }
   };
 
@@ -183,20 +220,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     <div className="bg-white border-b border-[#EAE3DE] shadow-sm mb-8 animate-in fade-in duration-200">
       {/* Top Admin Banner */}
       <div className="bg-[#50121E] text-white px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-          <span className="font-bold text-sm">Painel da Lojista · Eterna Chique</span>
-          <span className="text-xs text-white/70 hidden sm:inline">
-            (Dados sincronizados na nuvem)
-          </span>
+          <span className="font-bold text-sm">Área Administrativa · Eterna Chique</span>
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 text-xs font-mono text-[#E6C687]">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>{userEmail || AUTHORIZED_ADMIN_EMAIL}</span>
+          </div>
         </div>
 
-        <button
-          onClick={onCloseAdmin}
-          className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg border border-white/20 transition-colors"
-        >
-          Visualizar como Cliente
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onCloseAdmin}
+            className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg border border-white/20 transition-colors"
+          >
+            Visualizar como Cliente
+          </button>
+          <button
+            onClick={onLogout}
+            className="text-xs bg-red-950/40 hover:bg-red-900/60 text-white px-3 py-1.5 rounded-lg border border-red-400/30 transition-colors flex items-center gap-1"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sair</span>
+          </button>
+        </div>
       </div>
 
       {/* Admin Tabs */}
@@ -240,7 +287,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }`}
           >
             <SettingsIcon className="w-4 h-4" />
-            <span>Configurações & Senha</span>
+            <span>Configurações & Contatos</span>
           </button>
         </div>
       </div>
@@ -404,7 +451,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   Propostas de Sacola de Prova Enviadas pelas Clientes
                 </h3>
                 <p className="text-xs text-stone-500">
-                  Veja quais roupas cada cliente propôs para experimentar.
+                  Protegidas pelas regras do banco de dados (acessíveis apenas por você).
                 </p>
               </div>
               <span className="text-xs font-bold text-[#50121E] bg-white px-3 py-1.5 rounded-lg border border-[#EAE3DE]">
@@ -593,7 +640,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Configurações da Boutique Eterna Chique
               </h3>
               <p className="text-xs text-stone-500">
-                Altere seus contatos, frase do cabeçalho e senha de acesso.
+                Altere seus contatos, links e frase do catálogo.
               </p>
             </div>
 
@@ -710,24 +757,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
-            {/* Change Password */}
-            <div className="pt-4 border-t border-stone-100">
-              <label className="text-xs font-semibold text-stone-700 block mb-1">
-                Alterar Senha do Modo Lojista (opcional)
-              </label>
-              <div className="relative">
-                <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Digite uma nova senha caso queira alterar..."
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#681A28]"
-                />
+            {/* Authentication status box */}
+            <div className="pt-3 border-t border-stone-100 p-3 bg-stone-50 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-stone-600">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>Autenticação ativa e protegida via Firebase</span>
               </div>
-              <p className="text-[10px] text-stone-400 mt-1">
-                Deixe em branco para manter a senha atual.
-              </p>
+              <span className="font-mono text-[11px] text-[#50121E] font-semibold">{userEmail}</span>
             </div>
 
             <div className="pt-2">

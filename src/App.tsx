@@ -9,6 +9,25 @@ import { AdminPanel } from './components/AdminPanel';
 import { ProductFormModal } from './components/ProductFormModal';
 import { Footer } from './components/Footer';
 import { Product, BagItem, BagRequest, StoreSettings, PublicStoreSettings } from './types/store';
+import {
+  auth,
+  db,
+  AUTHORIZED_ADMIN_EMAIL,
+  handleFirestoreError,
+  OperationType,
+} from './lib/firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 const DEFAULT_PUBLIC_SETTINGS: PublicStoreSettings = {
   brandName: 'Eterna Chique',
@@ -25,10 +44,16 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<StoreSettings>({
     ...DEFAULT_PUBLIC_SETTINGS,
-    adminPasswordHash: 'eterna123',
+    adminPasswordHash: '',
   });
   const [bags, setBags] = useState<BagRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminView, setIsAdminView] = useState(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
   // Bag State
   const [bagItems, setBagItems] = useState<BagItem[]>(() => {
@@ -41,23 +66,12 @@ export default function App() {
   });
   const [isBagOpen, setIsBagOpen] = useState(false);
 
-  // Admin Mode State
-  const [adminToken, setAdminToken] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('eterna_chique_admin_token');
-    } catch {
-      return null;
-    }
-  });
-  const [isAdminView, setIsAdminView] = useState(false);
-  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
-
   // Modals
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [isProductFormOpen, setIsProductFormOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
 
-  // Save bag items to localStorage whenever updated
+  // Save bag items to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('eterna_chique_bag', JSON.stringify(bagItems));
@@ -66,53 +80,143 @@ export default function App() {
     }
   }, [bagItems]);
 
-  // Load public catalog or admin overview
+  // Firebase Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user && user.email?.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+        setIsAdmin(true);
+        setIsAdminView(true);
+      } else {
+        if (user && user.email?.toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+          await signOut(auth);
+          alert(
+            `Acesso Negado: A conta "${user.email}" não possui permissões de administradora. Apenas ${AUTHORIZED_ADMIN_EMAIL} é autorizada.`
+          );
+        }
+        setIsAdmin(false);
+        setIsAdminView(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch or Seed Data
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    try {
-      if (adminToken) {
-        // If logged in, fetch admin overview
-        const res = await fetch('/api/admin/overview', {
-          headers: { Authorization: `Bearer ${adminToken}` },
-        });
 
-        if (res.ok) {
-          const data = await res.json();
-          setProducts(data.products || []);
-          setBags(data.bags || []);
-          if (data.settings) setSettings(data.settings);
-          setIsAdminView(true);
-          setIsLoading(false);
-          return;
-        } else if (res.status === 401 || res.status === 403) {
-          // Token expired or invalid
-          localStorage.removeItem('eterna_chique_admin_token');
-          setAdminToken(null);
-          setIsAdminView(false);
+    try {
+      // 1. Fetch products from Firestore
+      let fetchedProducts: Product[] = [];
+      try {
+        const prodSnapshot = await getDocs(collection(db, 'products'));
+        if (!prodSnapshot.empty) {
+          fetchedProducts = prodSnapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<Product, 'id'>),
+          }));
+        }
+      } catch (err) {
+        console.warn('Firestore products fetch warning:', err);
+      }
+
+      // If Firestore has no products yet, seed with existing boutique catalog from backend
+      if (fetchedProducts.length === 0) {
+        try {
+          const res = await fetch('/api/catalog');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.products && Array.isArray(data.products) && data.products.length > 0) {
+              fetchedProducts = data.products;
+
+              // If admin is authenticated, seed to Firestore
+              if (auth.currentUser && auth.currentUser.email?.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+                for (const p of fetchedProducts) {
+                  try {
+                    await setDoc(doc(db, 'products', p.id), {
+                      code: p.code,
+                      name: p.name,
+                      category: p.category,
+                      price: p.price,
+                      sizes: p.sizes,
+                      description: p.description || '',
+                      imageUrl: p.imageUrl,
+                      status: p.status,
+                      createdAt: p.createdAt || new Date().toISOString(),
+                      updatedAt: p.updatedAt || new Date().toISOString(),
+                    });
+                  } catch (seedErr) {
+                    console.warn('Error seeding product to Firestore:', seedErr);
+                  }
+                }
+              }
+            }
+          }
+        } catch (fetchErr) {
+          console.error('Error fetching fallback catalog:', fetchErr);
         }
       }
 
-      // Public catalog fallback
-      const catRes = await fetch('/api/catalog');
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        setProducts(catData.products || []);
-        if (catData.settings) {
-          setSettings((prev) => ({ ...prev, ...catData.settings }));
+      setProducts(fetchedProducts);
+
+      // 2. Fetch settings
+      try {
+        const settingsSnap = await getDoc(doc(db, 'settings', 'store'));
+        if (settingsSnap.exists()) {
+          setSettings((prev) => ({ ...prev, ...(settingsSnap.data() as StoreSettings) }));
+        } else {
+          // Fallback to local settings
+          const catRes = await fetch('/api/catalog');
+          if (catRes.ok) {
+            const catData = await catRes.json();
+            if (catData.settings) {
+              setSettings((prev) => ({ ...prev, ...catData.settings }));
+            }
+          }
+        }
+      } catch (settingsErr) {
+        console.warn('Firestore settings fetch warning:', settingsErr);
+      }
+
+      // 3. If Admin, fetch bags
+      if (auth.currentUser && auth.currentUser.email?.toLowerCase() === AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+        try {
+          const bagsSnapshot = await getDocs(collection(db, 'bags'));
+          const fetchedBags: BagRequest[] = bagsSnapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<BagRequest, 'id'>),
+          }));
+          // Sort by date descending
+          fetchedBags.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setBags(fetchedBags);
+        } catch (bagsErr) {
+          console.warn('Firestore bags fetch warning:', bagsErr);
+          // Fallback to backend
+          try {
+            const token = await auth.currentUser.getIdToken();
+            const bRes = await fetch('/api/admin/overview', {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (bRes.ok) {
+              const bData = await bRes.json();
+              setBags(bData.bags || []);
+            }
+          } catch {}
         }
       }
     } catch (err) {
-      console.error('Error fetching data:', err);
+      console.error('Error in loadData:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [adminToken]);
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, currentUser]);
 
-  // Bag Operations
+  // Bag Operations (Customer)
   const handleAddToBag = (product: Product, size: string) => {
     setBagItems((prev) => {
       const existingIdx = prev.findIndex(
@@ -166,96 +270,116 @@ export default function App() {
     } catch {}
   };
 
-  // Admin Log In
-  const handleLoginSuccess = (token: string) => {
+  // Logout Admin
+  const handleLogoutAdmin = async () => {
     try {
-      localStorage.setItem('eterna_chique_admin_token', token);
-    } catch {}
-    setAdminToken(token);
-    setIsAdminView(true);
+      await signOut(auth);
+      setIsAdmin(false);
+      setIsAdminView(false);
+    } catch (err) {
+      console.error('Error during logout:', err);
+    }
   };
 
-  const handleLogoutAdmin = () => {
-    try {
-      localStorage.removeItem('eterna_chique_admin_token');
-    } catch {}
-    setAdminToken(null);
-    setIsAdminView(false);
-  };
-
-  // Save Product (Create or Update)
+  // Save Product (Admin Only)
   const handleSaveProduct = async (productData: Partial<Product>) => {
-    if (!adminToken) return;
-
-    if (productToEdit) {
-      // Update
-      const res = await fetch(`/api/admin/products/${productToEdit.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify(productData),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Erro ao atualizar.');
-      }
-    } else {
-      // Create
-      const res = await fetch('/api/admin/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify(productData),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Erro ao cadastrar.');
-      }
+    if (!isAdmin || !auth.currentUser) {
+      alert('Ação bloqueada: Somente a administradora autorizada pode cadastrar ou alterar peças.');
+      return;
     }
 
-    setProductToEdit(null);
-    await loadData();
+    try {
+      const id = productToEdit ? productToEdit.id : `prod-${Date.now()}`;
+      const payload = {
+        code: productData.code || 'EC-00',
+        name: productData.name || 'Nova Peça',
+        category: productData.category || 'Vestido longo',
+        price: Number(productData.price) || 0,
+        sizes: productData.sizes || ['U'],
+        description: productData.description || '',
+        imageUrl: productData.imageUrl || '/src/assets/images/blusa_seda_elegante_1793216112591.jpg',
+        status: productData.status || 'disponivel',
+        createdAt: productToEdit?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 1. Save to Firestore (protected by Firestore Security Rules)
+      await setDoc(doc(db, 'products', id), payload, { merge: true });
+
+      // 2. Sync to local backend
+      const token = await auth.currentUser.getIdToken();
+      if (productToEdit) {
+        await fetch(`/api/admin/products/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetch('/api/admin/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ id, ...payload }),
+        });
+      }
+
+      setProductToEdit(null);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error saving product:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'products');
+    }
   };
 
   // Quick toggle status for product
   const handleToggleProductStatus = async (product: Product) => {
-    if (!adminToken) return;
+    if (!isAdmin || !auth.currentUser) return;
     const nextStatus = product.status === 'vendida' ? 'disponivel' : 'vendida';
     try {
-      const res = await fetch(`/api/admin/products/${product.id}/status`, {
+      await updateDoc(doc(db, 'products', product.id), {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const token = await auth.currentUser.getIdToken();
+      await fetch(`/api/admin/products/${product.id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: nextStatus }),
       });
-      if (res.ok) {
-        await loadData();
-      }
-    } catch (err) {
+
+      await loadData();
+    } catch (err: any) {
       console.error('Error toggling status:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `products/${product.id}`);
     }
   };
 
   // Quick delete product
   const handleDeleteProduct = async (productId: string) => {
-    if (!adminToken) return;
+    if (!isAdmin || !auth.currentUser) return;
     if (!window.confirm('Tem certeza que deseja tirar esta peça do catálogo?')) return;
     try {
-      const res = await fetch(`/api/admin/products/${productId}`, {
+      await deleteDoc(doc(db, 'products', productId));
+
+      const token = await auth.currentUser.getIdToken();
+      await fetch(`/api/admin/products/${productId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${adminToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        await loadData();
-      }
-    } catch (err) {
+
+      await loadData();
+    } catch (err: any) {
       console.error('Error deleting product:', err);
+      handleFirestoreError(err, OperationType.DELETE, `products/${productId}`);
     }
   };
 
@@ -268,31 +392,35 @@ export default function App() {
         settings={settings}
         bagCount={totalPiecesInBag}
         onOpenBag={() => setIsBagOpen(true)}
-        isAdmin={!!adminToken && isAdminView}
+        isAdmin={isAdmin}
+        userEmail={currentUser?.email}
         onOpenAdmin={() => {
-          if (adminToken) {
+          if (isAdmin) {
             setIsAdminView(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           } else {
             setIsAdminLoginOpen(true);
           }
         }}
         onExitAdmin={() => setIsAdminView(false)}
+        onLogout={handleLogoutAdmin}
       />
 
       <main className="flex-1">
-        {/* If Admin is active and currently in admin view, show full panel */}
-        {adminToken && isAdminView && (
+        {/* If Admin is active and in Admin View, display administrative dashboard */}
+        {isAdmin && isAdminView && (
           <AdminPanel
             products={products}
             bags={bags}
             settings={settings}
-            adminToken={adminToken}
+            userEmail={currentUser?.email}
             onRefreshData={loadData}
             onOpenProductModal={(prod) => {
               setProductToEdit(prod || null);
               setIsProductFormOpen(true);
             }}
             onCloseAdmin={() => setIsAdminView(false)}
+            onLogout={handleLogoutAdmin}
           />
         )}
 
@@ -305,7 +433,7 @@ export default function App() {
           whatsappNumber={settings.whatsappNumber}
           onAddToBag={handleAddToBag}
           onViewDetails={(prod) => setViewingProduct(prod)}
-          isAdmin={!!adminToken && isAdminView}
+          isAdmin={isAdmin && isAdminView}
           onToggleStatus={handleToggleProductStatus}
           onEditProduct={(prod) => {
             setProductToEdit(prod);
@@ -323,14 +451,14 @@ export default function App() {
       <Footer
         settings={settings}
         onOpenAdmin={() => {
-          if (adminToken) {
+          if (isAdmin) {
             setIsAdminView(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           } else {
             setIsAdminLoginOpen(true);
           }
         }}
-        isAdmin={!!adminToken && isAdminView}
+        isAdmin={isAdmin}
       />
 
       {/* Modals & Drawers */}
@@ -354,7 +482,10 @@ export default function App() {
       <AdminLoginModal
         isOpen={isAdminLoginOpen}
         onClose={() => setIsAdminLoginOpen(false)}
-        onLoginSuccess={handleLoginSuccess}
+        onLoginSuccess={() => {
+          setIsAdminView(true);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       <ProductFormModal

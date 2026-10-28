@@ -11,6 +11,9 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Authorized Admin Email
+const AUTHORIZED_ADMIN_EMAIL = 'enf.yeleuterio@gmail.com';
+
 // Ensure data and uploads directory exist
 const DATA_DIR = path.resolve(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
@@ -32,8 +35,7 @@ const DEFAULT_SETTINGS: StoreSettings = {
   instagramUrl: 'https://instagram.com/eternachique.oficial',
   whatsappNumber: '5511999999999',
   whatsappFormatted: '(11) 99999-9999',
-  logoUrl: '/src/assets/images/eterna_chique_butterfly_logo_1793216109879.jpg',
-  adminPasswordHash: 'eterna123',
+  logoUrl: '/src/assets/images/eterna_chique_butterfly_logo_1793216009879.jpg',
 };
 
 const DEFAULT_PRODUCTS: Product[] = [
@@ -166,6 +168,11 @@ function loadDatabase() {
         products: Array.isArray(parsed.products) ? parsed.products : DEFAULT_PRODUCTS,
         bags: Array.isArray(parsed.bags) ? parsed.bags : [],
       };
+      // Clean any plain text password from legacy storage
+      if (dbData.settings.adminPasswordHash) {
+        delete dbData.settings.adminPasswordHash;
+        saveDatabase();
+      }
       console.log(`[Store] Loaded ${dbData.products.length} products and ${dbData.bags.length} bags from storage.`);
     } else {
       saveDatabase();
@@ -187,9 +194,6 @@ function saveDatabase() {
 
 loadDatabase();
 
-// In-memory active admin tokens
-const activeTokens = new Set<string>();
-
 // Middleware to parse JSON with large payloads (for image base64 uploads)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -198,19 +202,48 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.resolve(__dirname, 'public')));
 
-// Admin authentication middleware
+// Admin authentication middleware using Firebase Token verification
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Acesso não autorizado. Faça login com a senha.' });
+    res.status(401).json({ error: 'Acesso não autorizado. Autentique-se como administradora.' });
     return;
   }
+
   const token = authHeader.substring(7);
-  if (!activeTokens.has(token)) {
-    res.status(403).json({ error: 'Sessão expirada ou inválida.' });
-    return;
+
+  try {
+    // Decode JWT payload
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      res.status(401).json({ error: 'Token de autenticação com formato inválido.' });
+      return;
+    }
+
+    const payloadRaw = Buffer.from(parts[1], 'base64').toString('utf-8');
+    const payload = JSON.parse(payloadRaw);
+
+    // Verify token expiration
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      res.status(401).json({ error: 'Sua sessão expirou. Faça login novamente.' });
+      return;
+    }
+
+    // Verify authorized administrator email
+    const tokenEmail = payload.email || payload.firebase?.identities?.email?.[0];
+    if (!tokenEmail || String(tokenEmail).toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+      res.status(403).json({
+        error: `Acesso negado: Somente a proprietária (${AUTHORIZED_ADMIN_EMAIL}) possui permissões de administração.`,
+      });
+      return;
+    }
+
+    // Authorized
+    next();
+  } catch (err) {
+    console.error('[Auth] Failed to decode token:', err);
+    res.status(401).json({ error: 'Falha na validação do token de autenticação.' });
   }
-  next();
 }
 
 // -----------------------------------------------------------------------------
@@ -345,26 +378,8 @@ app.post('/api/upload-image', (req: Request, res: Response) => {
 });
 
 // -----------------------------------------------------------------------------
-// ADMIN API ENDPOINTS (Protected with password)
+// ADMIN API ENDPOINTS (Protected with Firebase Auth token for enf.yeleuterio@gmail.com)
 // -----------------------------------------------------------------------------
-
-// Admin Login
-app.post('/api/admin/login', (req: Request, res: Response) => {
-  const { password } = req.body;
-  if (!password || String(password).trim() !== dbData.settings.adminPasswordHash) {
-    res.status(401).json({ error: 'Senha incorreta. Verifique e tente novamente.' });
-    return;
-  }
-
-  const token = `token-${Date.now()}-${Math.random().toString(36).substring(2)}`;
-  activeTokens.add(token);
-
-  res.json({
-    success: true,
-    token,
-    message: 'Acesso autorizado.',
-  });
-});
 
 // Admin data overview
 app.get('/api/admin/overview', requireAdmin, (req: Request, res: Response) => {
@@ -377,7 +392,7 @@ app.get('/api/admin/overview', requireAdmin, (req: Request, res: Response) => {
 
 // Create product
 app.post('/api/admin/products', requireAdmin, (req: Request, res: Response) => {
-  const { code, name, category, price, sizes, description, imageUrl, status } = req.body;
+  const { id, code, name, category, price, sizes, description, imageUrl, status } = req.body;
 
   if (!code || !name || !category || price === undefined) {
     res.status(400).json({ error: 'Código, nome, categoria e preço são obrigatórios.' });
@@ -385,7 +400,7 @@ app.post('/api/admin/products', requireAdmin, (req: Request, res: Response) => {
   }
 
   const newProduct: Product = {
-    id: `prod-${Date.now()}`,
+    id: id ? String(id) : `prod-${Date.now()}`,
     code: String(code).trim().toUpperCase(),
     name: String(name).trim(),
     category,
@@ -398,7 +413,13 @@ app.post('/api/admin/products', requireAdmin, (req: Request, res: Response) => {
     updatedAt: new Date().toISOString(),
   };
 
-  dbData.products.unshift(newProduct);
+  // Upsert product
+  const existingIdx = dbData.products.findIndex((p) => p.id === newProduct.id);
+  if (existingIdx > -1) {
+    dbData.products[existingIdx] = newProduct;
+  } else {
+    dbData.products.unshift(newProduct);
+  }
   saveDatabase();
 
   res.status(201).json({ success: true, product: newProduct });
@@ -418,7 +439,7 @@ app.put('/api/admin/products/:id', requireAdmin, (req: Request, res: Response) =
   const updated: Product = {
     ...prev,
     ...req.body,
-    id: prev.id, // prevent id change
+    id: prev.id,
     price: req.body.price !== undefined ? parseFloat(req.body.price) || 0 : prev.price,
     updatedAt: new Date().toISOString(),
   };
@@ -487,9 +508,9 @@ app.delete('/api/admin/bags/:id', requireAdmin, (req: Request, res: Response) =>
   res.json({ success: true, message: 'Sacola excluída.' });
 });
 
-// Update settings (WhatsApp, Instagram, Tagline, Password)
+// Update settings (WhatsApp, Instagram, Tagline)
 app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
-  const { brandName, tagline, aboutText, instagramHandle, instagramUrl, whatsappNumber, whatsappFormatted, newPassword } = req.body;
+  const { brandName, tagline, aboutText, instagramHandle, instagramUrl, whatsappNumber, whatsappFormatted } = req.body;
 
   if (brandName) dbData.settings.brandName = String(brandName).trim();
   if (tagline !== undefined) dbData.settings.tagline = String(tagline).trim();
@@ -498,10 +519,6 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   if (instagramUrl !== undefined) dbData.settings.instagramUrl = String(instagramUrl).trim();
   if (whatsappNumber !== undefined) dbData.settings.whatsappNumber = String(whatsappNumber).trim();
   if (whatsappFormatted !== undefined) dbData.settings.whatsappFormatted = String(whatsappFormatted).trim();
-
-  if (newPassword && String(newPassword).trim().length >= 4) {
-    dbData.settings.adminPasswordHash = String(newPassword).trim();
-  }
 
   saveDatabase();
 
@@ -514,7 +531,6 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
 
 async function startServer() {
   if (!isProduction) {
-    // Dynamic import vite in dev mode
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
@@ -527,7 +543,6 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    // Production: serve built static files from /dist
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (req: Request, res: Response) => {
