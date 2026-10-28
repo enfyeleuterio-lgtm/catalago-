@@ -1,0 +1,6 @@
+{
+  "name": "Eterna Chique | Catálogo Exclusivo & Sacola de Prova",
+  "description": "Boutique feminina Eterna Chique. Catálogo de moda elegante, blusas, shorts, calças, saias, vestidos e conjuntos, com sacola de prova para experimentar e atendimento direto via WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
