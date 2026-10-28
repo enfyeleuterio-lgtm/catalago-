@@ -12,15 +12,13 @@ import {
   AlertCircle,
   LogOut,
   ShieldCheck,
-  UserCheck,
+  KeyRound,
 } from 'lucide-react';
 import { Product, BagRequest, StoreSettings, BagStatus } from '../types/store';
 import {
   db,
   auth,
   AUTHORIZED_ADMIN_EMAIL,
-  handleFirestoreError,
-  OperationType,
 } from '../lib/firebase';
 import { doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 
@@ -28,6 +26,7 @@ interface AdminPanelProps {
   products: Product[];
   bags: BagRequest[];
   settings: StoreSettings;
+  adminToken?: string | null;
   userEmail?: string | null;
   onRefreshData: () => Promise<void>;
   onOpenProductModal: (product?: Product) => void;
@@ -39,6 +38,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   products,
   bags,
   settings,
+  adminToken,
   userEmail,
   onRefreshData,
   onOpenProductModal,
@@ -57,22 +57,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [instagramUrl, setInstagramUrl] = useState(settings.instagramUrl);
   const [whatsappNumber, setWhatsappNumber] = useState(settings.whatsappNumber);
   const [whatsappFormatted, setWhatsappFormatted] = useState(settings.whatsappFormatted);
+  const [newPassword, setNewPassword] = useState('');
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  const getAuthToken = async (): Promise<string> => {
+    if (adminToken) return adminToken;
+    try {
+      return (await auth.currentUser?.getIdToken()) || '';
+    } catch {
+      return '';
+    }
+  };
 
   // Quick product status toggle (Disponível <-> Vendida)
   const handleToggleProductStatus = async (product: Product) => {
     const nextStatus = product.status === 'vendida' ? 'disponivel' : 'vendida';
     try {
-      // 1. Update in Firestore with security rules validation
-      const productRef = doc(db, 'products', product.id);
-      await updateDoc(productRef, {
-        status: nextStatus,
-        updatedAt: new Date().toISOString(),
-      });
+      // 1. Update in Firestore if logged in with Firebase
+      if (auth.currentUser) {
+        try {
+          const productRef = doc(db, 'products', product.id);
+          await updateDoc(productRef, {
+            status: nextStatus,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (fErr) {
+          console.warn('Firestore direct update warning:', fErr);
+        }
+      }
 
       // 2. Sync with local backend
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAuthToken();
       await fetch(`/api/admin/products/${product.id}/status`, {
         method: 'PATCH',
         headers: {
@@ -85,7 +101,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await onRefreshData();
     } catch (err: any) {
       console.error('Error toggling product status:', err);
-      handleFirestoreError(err, OperationType.UPDATE, `products/${product.id}`);
     }
   };
 
@@ -95,12 +110,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
     try {
-      // 1. Delete from Firestore
-      const productRef = doc(db, 'products', productId);
-      await deleteDoc(productRef);
+      // 1. Delete from Firestore if Firebase auth is active
+      if (auth.currentUser) {
+        try {
+          const productRef = doc(db, 'products', productId);
+          await deleteDoc(productRef);
+        } catch (fErr) {
+          console.warn('Firestore direct delete warning:', fErr);
+        }
+      }
 
-      // 2. Sync with local backend
-      const token = await auth.currentUser?.getIdToken();
+      // 2. Sync with backend
+      const token = await getAuthToken();
       await fetch(`/api/admin/products/${productId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -109,7 +130,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await onRefreshData();
     } catch (err: any) {
       console.error('Error deleting product:', err);
-      handleFirestoreError(err, OperationType.DELETE, `products/${productId}`);
     }
   };
 
@@ -117,11 +137,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleUpdateBagStatus = async (bagId: string, status: BagStatus) => {
     try {
       // 1. Update in Firestore
-      const bagRef = doc(db, 'bags', bagId);
-      await updateDoc(bagRef, { status });
+      if (auth.currentUser) {
+        try {
+          const bagRef = doc(db, 'bags', bagId);
+          await updateDoc(bagRef, { status });
+        } catch (fErr) {
+          console.warn('Firestore bag update warning:', fErr);
+        }
+      }
 
-      // 2. Sync with local backend
-      const token = await auth.currentUser?.getIdToken();
+      // 2. Sync with backend
+      const token = await getAuthToken();
       await fetch(`/api/admin/bags/${bagId}/status`, {
         method: 'PATCH',
         headers: {
@@ -134,7 +160,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await onRefreshData();
     } catch (err: any) {
       console.error('Error updating bag status:', err);
-      handleFirestoreError(err, OperationType.UPDATE, `bags/${bagId}`);
     }
   };
 
@@ -142,12 +167,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteBag = async (bagId: string) => {
     if (!window.confirm(`Excluir o registro da sacola #${bagId}?`)) return;
     try {
-      // 1. Delete from Firestore
-      const bagRef = doc(db, 'bags', bagId);
-      await deleteDoc(bagRef);
+      if (auth.currentUser) {
+        try {
+          const bagRef = doc(db, 'bags', bagId);
+          await deleteDoc(bagRef);
+        } catch (fErr) {
+          console.warn('Firestore bag delete warning:', fErr);
+        }
+      }
 
-      // 2. Sync with local backend
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAuthToken();
       await fetch(`/api/admin/bags/${bagId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -156,7 +185,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await onRefreshData();
     } catch (err: any) {
       console.error('Error deleting bag:', err);
-      handleFirestoreError(err, OperationType.DELETE, `bags/${bagId}`);
     }
   };
 
@@ -176,15 +204,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         whatsappNumber: whatsappNumber.trim(),
         whatsappFormatted: whatsappFormatted.trim(),
         logoUrl: settings.logoUrl,
+        newPassword: newPassword.trim() || undefined,
       };
 
-      // 1. Save to Firestore
-      const settingsRef = doc(db, 'settings', 'store');
-      await setDoc(settingsRef, updatedSettings, { merge: true });
+      // 1. Save to Firestore if available
+      if (auth.currentUser) {
+        try {
+          const settingsRef = doc(db, 'settings', 'store');
+          await setDoc(settingsRef, {
+            brandName: updatedSettings.brandName,
+            tagline: updatedSettings.tagline,
+            aboutText: updatedSettings.aboutText,
+            instagramHandle: updatedSettings.instagramHandle,
+            instagramUrl: updatedSettings.instagramUrl,
+            whatsappNumber: updatedSettings.whatsappNumber,
+            whatsappFormatted: updatedSettings.whatsappFormatted,
+            logoUrl: updatedSettings.logoUrl,
+          }, { merge: true });
+        } catch (fErr) {
+          console.warn('Firestore settings update warning:', fErr);
+        }
+      }
 
       // 2. Sync with backend
-      const token = await auth.currentUser?.getIdToken();
-      await fetch('/api/admin/settings', {
+      const token = await getAuthToken();
+      const res = await fetch('/api/admin/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -193,7 +237,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         body: JSON.stringify(updatedSettings),
       });
 
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erro ao salvar configurações.');
+      }
+
       setSettingsSuccess(true);
+      setNewPassword('');
       await onRefreshData();
       setTimeout(() => setSettingsSuccess(false), 2500);
     } catch (err: any) {
@@ -287,7 +337,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }`}
           >
             <SettingsIcon className="w-4 h-4" />
-            <span>Configurações & Contatos</span>
+            <span>Configurações & Senha</span>
           </button>
         </div>
       </div>
@@ -640,7 +690,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Configurações da Boutique Eterna Chique
               </h3>
               <p className="text-xs text-stone-500">
-                Altere seus contatos, links e frase do catálogo.
+                Altere seus contatos, links, frase do catálogo e senha administrativa.
               </p>
             </div>
 
@@ -757,13 +807,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* Change Admin Password */}
+            <div className="pt-3 border-t border-stone-100">
+              <label className="text-xs font-semibold text-stone-700 block mb-1">
+                Alterar Senha de Administradora (opcional)
+              </label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Digite uma nova senha para atualizar..."
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#681A28]"
+                />
+              </div>
+              <p className="text-[10px] text-stone-400 mt-1">
+                Deixe em branco para manter a senha atual.
+              </p>
+            </div>
+
             {/* Authentication status box */}
             <div className="pt-3 border-t border-stone-100 p-3 bg-stone-50 rounded-xl flex items-center justify-between text-xs">
               <div className="flex items-center gap-2 text-stone-600">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Autenticação ativa e protegida via Firebase</span>
+                <span>Conta autorizada exclusiva</span>
               </div>
-              <span className="font-mono text-[11px] text-[#50121E] font-semibold">{userEmail}</span>
+              <span className="font-mono text-[11px] text-[#50121E] font-semibold">{userEmail || AUTHORIZED_ADMIN_EMAIL}</span>
             </div>
 
             <div className="pt-2">

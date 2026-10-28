@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { Product, BagRequest, StoreSettings, PublicStoreSettings } from './src/types/store.ts';
 
@@ -13,6 +14,53 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // Authorized Admin Email
 const AUTHORIZED_ADMIN_EMAIL = 'enf.yeleuterio@gmail.com';
+const SALT = 'eterna_chique_boutique_salt_2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'eterna_chique_jwt_secret_key_84920';
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password + SALT).digest('hex');
+}
+
+function generateToken(email: string): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({
+      email,
+      iss: 'eterna-chique-auth',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600, // 7 days
+    })
+  ).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${signature}`;
+}
+
+function verifyToken(token: string): { email: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, signature] = parts;
+
+    // Check if it's our signed JWT
+    const expectedSignature = crypto.createHmac('sha256', JWT_SECRET).update(`${headerB64}.${payloadB64}`).digest('base64url');
+    if (signature === expectedSignature) {
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+      if (payload.exp && payload.exp * 1000 < Date.now()) return null;
+      return { email: payload.email };
+    }
+
+    // Also support Firebase Google ID tokens
+    const payloadRaw = Buffer.from(payloadB64, 'base64url').toString('utf-8');
+    const payload = JSON.parse(payloadRaw);
+    if (payload.exp && payload.exp * 1000 < Date.now()) return null;
+    const tokenEmail = payload.email || payload.firebase?.identities?.email?.[0];
+    if (tokenEmail) return { email: tokenEmail };
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Ensure data and uploads directory exist
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -35,7 +83,8 @@ const DEFAULT_SETTINGS: StoreSettings = {
   instagramUrl: 'https://instagram.com/eternachique.oficial',
   whatsappNumber: '5511999999999',
   whatsappFormatted: '(11) 99999-9999',
-  logoUrl: '/src/assets/images/eterna_chique_butterfly_logo_1793216009879.jpg',
+  logoUrl: '/src/assets/images/eterna_chique_butterfly_logo_1793216109879.jpg',
+  passwordHash: hashPassword('eterna123'),
 };
 
 const DEFAULT_PRODUCTS: Product[] = [
@@ -168,9 +217,8 @@ function loadDatabase() {
         products: Array.isArray(parsed.products) ? parsed.products : DEFAULT_PRODUCTS,
         bags: Array.isArray(parsed.bags) ? parsed.bags : [],
       };
-      // Clean any plain text password from legacy storage
-      if (dbData.settings.adminPasswordHash) {
-        delete dbData.settings.adminPasswordHash;
+      if (!dbData.settings.passwordHash) {
+        dbData.settings.passwordHash = hashPassword('eterna123');
         saveDatabase();
       }
       console.log(`[Store] Loaded ${dbData.products.length} products and ${dbData.bags.length} bags from storage.`);
@@ -202,7 +250,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.static(path.resolve(__dirname, 'public')));
 
-// Admin authentication middleware using Firebase Token verification
+// Admin authentication middleware
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -211,39 +259,21 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = authHeader.substring(7);
+  const verified = verifyToken(token);
 
-  try {
-    // Decode JWT payload
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      res.status(401).json({ error: 'Token de autenticação com formato inválido.' });
-      return;
-    }
-
-    const payloadRaw = Buffer.from(parts[1], 'base64').toString('utf-8');
-    const payload = JSON.parse(payloadRaw);
-
-    // Verify token expiration
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      res.status(401).json({ error: 'Sua sessão expirou. Faça login novamente.' });
-      return;
-    }
-
-    // Verify authorized administrator email
-    const tokenEmail = payload.email || payload.firebase?.identities?.email?.[0];
-    if (!tokenEmail || String(tokenEmail).toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
-      res.status(403).json({
-        error: `Acesso negado: Somente a proprietária (${AUTHORIZED_ADMIN_EMAIL}) possui permissões de administração.`,
-      });
-      return;
-    }
-
-    // Authorized
-    next();
-  } catch (err) {
-    console.error('[Auth] Failed to decode token:', err);
-    res.status(401).json({ error: 'Falha na validação do token de autenticação.' });
+  if (!verified) {
+    res.status(401).json({ error: 'Token inválido ou sessão expirada. Faça login novamente.' });
+    return;
   }
+
+  if (verified.email.toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+    res.status(403).json({
+      error: `Acesso negado: Somente a proprietária (${AUTHORIZED_ADMIN_EMAIL}) possui permissões de administração.`,
+    });
+    return;
+  }
+
+  next();
 }
 
 // -----------------------------------------------------------------------------
@@ -339,7 +369,7 @@ app.post('/api/bag', (req: Request, res: Response) => {
   });
 });
 
-// 3. Upload image (used by admin for clothes photos, and by customer to send inspiration clothes photos)
+// 3. Upload image
 app.post('/api/upload-image', (req: Request, res: Response) => {
   try {
     const { imageBase64, filename } = req.body;
@@ -348,7 +378,6 @@ app.post('/api/upload-image', (req: Request, res: Response) => {
       return;
     }
 
-    // Extract mime type and base64 payload
     const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     let buffer: Buffer;
     let ext = 'jpg';
@@ -378,8 +407,41 @@ app.post('/api/upload-image', (req: Request, res: Response) => {
 });
 
 // -----------------------------------------------------------------------------
-// ADMIN API ENDPOINTS (Protected with Firebase Auth token for enf.yeleuterio@gmail.com)
+// ADMIN AUTHENTICATION & MANAGEMENT ENDPOINTS
 // -----------------------------------------------------------------------------
+
+// Admin Password Login (Safe salted hash authentication for enf.yeleuterio@gmail.com)
+app.post('/api/admin/login', (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    res.status(400).json({ error: 'Informe seu e-mail e sua senha de administradora.' });
+    return;
+  }
+
+  if (String(email).trim().toLowerCase() !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+    res.status(403).json({
+      error: `Acesso negado: Somente a proprietária (${AUTHORIZED_ADMIN_EMAIL}) possui permissões de administração.`,
+    });
+    return;
+  }
+
+  const currentHash = dbData.settings.passwordHash || hashPassword('eterna123');
+  const inputHash = hashPassword(String(password).trim());
+
+  if (inputHash !== currentHash) {
+    res.status(401).json({ error: 'Senha incorreta. Verifique e tente novamente.' });
+    return;
+  }
+
+  const token = generateToken(AUTHORIZED_ADMIN_EMAIL);
+  res.json({
+    success: true,
+    token,
+    email: AUTHORIZED_ADMIN_EMAIL,
+    message: 'Autenticação realizada com sucesso.',
+  });
+});
 
 // Admin data overview
 app.get('/api/admin/overview', requireAdmin, (req: Request, res: Response) => {
@@ -413,7 +475,6 @@ app.post('/api/admin/products', requireAdmin, (req: Request, res: Response) => {
     updatedAt: new Date().toISOString(),
   };
 
-  // Upsert product
   const existingIdx = dbData.products.findIndex((p) => p.id === newProduct.id);
   if (existingIdx > -1) {
     dbData.products[existingIdx] = newProduct;
@@ -508,9 +569,9 @@ app.delete('/api/admin/bags/:id', requireAdmin, (req: Request, res: Response) =>
   res.json({ success: true, message: 'Sacola excluída.' });
 });
 
-// Update settings (WhatsApp, Instagram, Tagline)
+// Update settings (WhatsApp, Instagram, Tagline, Password)
 app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
-  const { brandName, tagline, aboutText, instagramHandle, instagramUrl, whatsappNumber, whatsappFormatted } = req.body;
+  const { brandName, tagline, aboutText, instagramHandle, instagramUrl, whatsappNumber, whatsappFormatted, newPassword } = req.body;
 
   if (brandName) dbData.settings.brandName = String(brandName).trim();
   if (tagline !== undefined) dbData.settings.tagline = String(tagline).trim();
@@ -519,6 +580,10 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   if (instagramUrl !== undefined) dbData.settings.instagramUrl = String(instagramUrl).trim();
   if (whatsappNumber !== undefined) dbData.settings.whatsappNumber = String(whatsappNumber).trim();
   if (whatsappFormatted !== undefined) dbData.settings.whatsappFormatted = String(whatsappFormatted).trim();
+
+  if (newPassword && String(newPassword).trim().length >= 4) {
+    dbData.settings.passwordHash = hashPassword(String(newPassword).trim());
+  }
 
   saveDatabase();
 

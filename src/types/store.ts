@@ -71,6 +71,7 @@ export interface StoreSettings {
   whatsappNumber: string;
   whatsappFormatted: string;
   logoUrl: string;
+  passwordHash?: string;
   adminPasswordHash?: string;
 }
 
