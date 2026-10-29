@@ -13,6 +13,13 @@ import {
   LogOut,
   ShieldCheck,
   KeyRound,
+  Share2,
+  Copy,
+  ExternalLink,
+  Eye,
+  Link as LinkIcon,
+  Send,
+  Sparkles,
 } from 'lucide-react';
 import { Product, BagRequest, StoreSettings, BagStatus } from '../types/store';
 import {
@@ -31,6 +38,7 @@ interface AdminPanelProps {
   onRefreshData: () => Promise<void>;
   onOpenProductModal: (product?: Product) => void;
   onCloseAdmin: () => void;
+  onViewAsCustomer: () => void;
   onLogout: () => void;
 }
 
@@ -43,11 +51,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onRefreshData,
   onOpenProductModal,
   onCloseAdmin,
+  onViewAsCustomer,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'products' | 'bags' | 'settings'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'bags' | 'share' | 'settings'>('products');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todas');
+  const [copiedLinkType, setCopiedLinkType] = useState<'client' | 'admin' | null>(null);
+
+  // Link URLs
+  const getClientShareUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const origin = window.location.origin;
+    // If in dev environment, recommend shared preview host
+    if (origin.includes('ais-dev-')) {
+      const preOrigin = origin.replace('ais-dev-', 'ais-pre-');
+      return `${preOrigin}?view=cliente`;
+    }
+    return `${origin}${window.location.pathname}?view=cliente`;
+  };
+
+  const getAdminShareUrl = () => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}${window.location.pathname}`;
+  };
+
+  const handleCopyLink = async (type: 'client' | 'admin') => {
+    const url = type === 'client' ? getClientShareUrl() : getAdminShareUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLinkType(type);
+      setTimeout(() => setCopiedLinkType(null), 3000);
+    } catch {
+      window.prompt('Copie o link abaixo:', url);
+    }
+  };
+
+  const handleShareWhatsApp = () => {
+    const url = getClientShareUrl();
+    const text = encodeURIComponent(
+      `Olá! ✨ Acesse o catálogo exclusivo da *Eterna Chique* para conferir nossas peças de alfaiataria, vestidos e novidades, e monte sua mala de prova:\n\n${url}`
+    );
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
 
   // Settings form states
   const [brandName, setBrandName] = useState(settings.brandName);

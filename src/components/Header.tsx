@@ -11,6 +11,7 @@ interface HeaderProps {
   onOpenAdmin: () => void;
   onExitAdmin: () => void;
   onLogout?: () => void;
+  isCustomerViewOnly?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdmin,
   onExitAdmin,
   onLogout,
+  isCustomerViewOnly = false,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#FAF7F5]/95 backdrop-blur-md border-b border-[#EAE3DE] transition-all">
@@ -102,33 +104,35 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: Actions - Bag and Admin Access */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {isAdmin ? (
-            <div className="flex items-center gap-2">
+          {!isCustomerViewOnly && (
+            isAdmin ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onOpenAdmin}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#50121E] hover:bg-[#681A28] rounded-xl transition-all shadow-xs"
+                  title="Abrir Painel de Administração"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#E6C687]" />
+                  <span>Painel Lojista</span>
+                </button>
+                <button
+                  onClick={onLogout}
+                  className="p-2 text-stone-500 hover:text-red-700 hover:bg-stone-100 rounded-xl transition-colors"
+                  title="Sair da Conta"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
               <button
                 onClick={onOpenAdmin}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#50121E] hover:bg-[#681A28] rounded-xl transition-all shadow-xs"
-                title="Abrir Painel de Administração"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#50121E] bg-[#FAF7F5] hover:bg-[#F3EAE4] border border-[#50121E]/30 rounded-xl transition-all shadow-xs active:scale-95"
+                title="Acesso com Senha da Lojista"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#E6C687]" />
-                <span>Painel Lojista</span>
+                <Lock className="w-3.5 h-3.5 text-[#681A28] shrink-0" />
+                <span className="font-bold text-[#50121E]">Área da Lojista</span>
               </button>
-              <button
-                onClick={onLogout}
-                className="p-2 text-stone-500 hover:text-red-700 hover:bg-stone-100 rounded-xl transition-colors"
-                title="Sair da Conta"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onOpenAdmin}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#50121E] bg-[#FAF7F5] hover:bg-[#F3EAE4] border border-[#50121E]/30 rounded-xl transition-all shadow-xs active:scale-95"
-              title="Acesso com Senha da Lojista"
-            >
-              <Lock className="w-3.5 h-3.5 text-[#681A28] shrink-0" />
-              <span className="font-bold text-[#50121E]">Área da Lojista</span>
-            </button>
+            )
           )}
 
           {/* Sacola Button */}

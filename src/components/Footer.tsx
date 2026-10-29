@@ -6,9 +6,15 @@ interface FooterProps {
   settings: PublicStoreSettings;
   onOpenAdmin: () => void;
   isAdmin: boolean;
+  isCustomerViewOnly?: boolean;
 }
 
-export const Footer: React.FC<FooterProps> = ({ settings, onOpenAdmin, isAdmin }) => {
+export const Footer: React.FC<FooterProps> = ({
+  settings,
+  onOpenAdmin,
+  isAdmin,
+  isCustomerViewOnly = false,
+}) => {
   const cleanPhone = settings.whatsappNumber.replace(/\D/g, '');
 
   return (
@@ -122,21 +128,35 @@ export const Footer: React.FC<FooterProps> = ({ settings, onOpenAdmin, isAdmin }
             </div>
           </div>
 
-          {/* Owner Access */}
+          {/* Right Column: Customer Info or Owner Access */}
           <div className="md:col-span-3 space-y-3">
-            <div className="text-xs uppercase tracking-widest text-[#E6C687] font-semibold">
-              Área da Lojista
-            </div>
-            <p className="text-xs text-stone-400 font-light">
-              Exclusivo para a dona da loja gerenciar peças, preços, fotos e pedidos.
-            </p>
-            <button
-              onClick={onOpenAdmin}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/10 transition-colors"
-            >
-              <Lock className="w-3.5 h-3.5 text-[#E6C687]" />
-              <span>{isAdmin ? 'Painel Aberto' : 'Acessar com Senha'}</span>
-            </button>
+            {isCustomerViewOnly ? (
+              <>
+                <div className="text-xs uppercase tracking-widest text-[#E6C687] font-semibold">
+                  Atendimento Especial
+                </div>
+                <p className="text-xs text-stone-400 font-light leading-relaxed">
+                  Segunda a Sábado, das 09h às 19h.<br />
+                  Entregas de mala de prova personalizadas para você experimentar sem compromisso.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="text-xs uppercase tracking-widest text-[#E6C687] font-semibold">
+                  Área da Lojista
+                </div>
+                <p className="text-xs text-stone-400 font-light">
+                  Exclusivo para a dona da loja gerenciar peças, preços, fotos e pedidos.
+                </p>
+                <button
+                  onClick={onOpenAdmin}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium border border-white/10 transition-colors"
+                >
+                  <Lock className="w-3.5 h-3.5 text-[#E6C687]" />
+                  <span>{isAdmin ? 'Painel Aberto' : 'Acessar com Senha'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
