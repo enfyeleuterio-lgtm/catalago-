@@ -1,0 +1,156 @@
+{
+  "settings": {
+    "brandName": "Eterna Chique",
+    "tagline": "A elegância que transcende o tempo.",
+    "aboutText": "Peças pensadas para mulheres que valorizam sofisticação, cortes nobres e caimento impecável. Escolha suas peças e solicite sua sacola de prova para experimentar.",
+    "instagramHandle": "@eternachique.oficial",
+    "instagramUrl": "https://instagram.com/eternachique.oficial",
+    "whatsappNumber": "5511999999999",
+    "whatsappFormatted": "(11) 99999-9999",
+    "logoUrl": "/src/assets/images/eterna_chique_butterfly_logo_1793216109879.jpg",
+    "passwordHash": "9b0058a7bc0c6bd9c2171a8d05e453a5bf6f4bc395c67ce2ca9620af9326b7b3"
+  },
+  "products": [
+    {
+      "id": "prod-1",
+      "code": "EC-01",
+      "name": "Blusa Seda Champagne & Vinho",
+      "category": "Blusa",
+      "price": 189.9,
+      "sizes": [
+        "P",
+        "M",
+        "G"
+      ],
+      "description": "Blusa refinada em seda pura com detalhes e punhos em tom vinho nobre. Botões perolados e caimento impecável.",
+      "imageUrl": "/src/assets/images/blusa_seda_elegante_1793216112591.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.224Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-2",
+      "code": "EC-02",
+      "name": "Short Alfaiataria Linho com Cinto",
+      "category": "Short",
+      "price": 169.9,
+      "sizes": [
+        "36",
+        "38",
+        "40",
+        "42"
+      ],
+      "description": "Short de cintura alta com pregas frontais e cinto fininho estruturado. Tecido nobre de linho misto encorpado.",
+      "imageUrl": "/src/assets/images/short_alfaiataria_luxo_1793216127227.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-3",
+      "code": "EC-03",
+      "name": "Calça Pantalona Alfaiataria Vinho",
+      "category": "Calça",
+      "price": 249.9,
+      "sizes": [
+        "36",
+        "38",
+        "40",
+        "42",
+        "44"
+      ],
+      "description": "Pantalona fluida com vinco clássico e cós anatômico. Corte alongador em crepe alfaiataria de alta gramatura.",
+      "imageUrl": "/src/assets/images/calca_pantalona_vinho_1793216127922.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-4",
+      "code": "EC-04",
+      "name": "Saia Midi Plissada Acetinada",
+      "category": "Saias",
+      "price": 219.9,
+      "sizes": [
+        "P",
+        "M",
+        "G"
+      ],
+      "description": "Saia midi com plissado permanente delicado e acabamento acetinado com brilho sutil. Movimento gracioso e feminino.",
+      "imageUrl": "/src/assets/images/saia_midi_plissada_1793216128399.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-5",
+      "code": "EC-05",
+      "name": "Vestido Longo Gala Vinho Nobre",
+      "category": "Vestido longo",
+      "price": 429.9,
+      "sizes": [
+        "P",
+        "M",
+        "G",
+        "GG"
+      ],
+      "description": "Vestido longo majestoso com decote transpassado e drapeado escultural na cintura. Tecido fluido acetinado toque de seda.",
+      "imageUrl": "/src/assets/images/vestido_longo_luxo_1793216112203.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-6",
+      "code": "EC-06",
+      "name": "Vestido Curto Cocktail Plissado",
+      "category": "Vestido curto",
+      "price": 289.9,
+      "sizes": [
+        "P",
+        "M",
+        "G"
+      ],
+      "description": "Vestido curto elegante com decote canoa e saia em pregas finas estruturadas. Perfeito para coquetéis e jantares sofisticados.",
+      "imageUrl": "/src/assets/images/vestido_curto_elegante_1793216113250.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-7",
+      "code": "EC-07",
+      "name": "Macaquinho Alfaiataria Tuxedo",
+      "category": "Macaquinho",
+      "price": 269.9,
+      "sizes": [
+        "P",
+        "M",
+        "G"
+      ],
+      "description": "Macaquinho com gola smoking sofisticada, mangas longas e faixa ajustável de amarração na cintura. Sofisticação e praticidade.",
+      "imageUrl": "/src/assets/images/macaquinho_chique_1793216128376.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    },
+    {
+      "id": "prod-8",
+      "code": "EC-08",
+      "name": "Conjunto Alfaiataria Blazer & Calça",
+      "category": "Conjunto",
+      "price": 489.9,
+      "sizes": [
+        "P",
+        "M",
+        "G"
+      ],
+      "description": "Conjunto atemporal de blazer estruturado com forro acetinado acompanhado de calça clássica. Elegância definitiva.",
+      "imageUrl": "/src/assets/images/conjunto_alfaiataria_1793216111923.jpg",
+      "status": "disponivel",
+      "createdAt": "2026-10-28T19:42:43.225Z",
+      "updatedAt": "2026-10-28T19:42:43.225Z"
+    }
+  ],
+  "bags": []
+}

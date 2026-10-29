@@ -112,9 +112,12 @@ export default function App() {
           setIsAdmin(false);
           setIsAdminView(false);
         }
-      } else if (!adminToken) {
-        setIsAdmin(false);
-        setIsAdminView(false);
+      } else {
+        const stored = localStorage.getItem('eterna_chique_admin_session');
+        if (!stored && !adminToken) {
+          setIsAdmin(false);
+          setIsAdminView(false);
+        }
       }
     });
 
@@ -124,6 +127,10 @@ export default function App() {
   // Helper to get active token
   const getActiveAuthToken = useCallback(async (): Promise<string> => {
     if (adminToken) return adminToken;
+    try {
+      const stored = localStorage.getItem('eterna_chique_admin_session');
+      if (stored) return stored;
+    } catch {}
     if (auth.currentUser) {
       try {
         return (await auth.currentUser.getIdToken()) || '';

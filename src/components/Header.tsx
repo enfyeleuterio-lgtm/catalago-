@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, Instagram, Phone, Lock, Sparkles, Check, LogOut, UserCheck } from 'lucide-react';
+import { ShoppingBag, Instagram, Phone, Lock, Sparkles, LogOut, ShieldCheck } from 'lucide-react';
 import { PublicStoreSettings } from '../types/store';
 
 interface HeaderProps {
@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Main 3-Zone Navigation */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 sm:gap-8">
         {/* Zone 1: Brand Wordmark with Butterfly Logo */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-10 h-10 rounded-full overflow-hidden border border-[#E6C687]/60 shadow-sm bg-[#50121E] shrink-0">
@@ -101,23 +101,21 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Zone 3: Actions - Bag and Admin Access */}
-        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {isAdmin ? (
             <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#50121E] bg-[#F7EFE9] border border-[#50121E]/20 rounded-md">
-                <UserCheck className="w-3.5 h-3.5 text-[#50121E]" />
-                <span className="truncate max-w-[140px]">{userEmail}</span>
-              </div>
               <button
                 onClick={onOpenAdmin}
-                className="text-xs px-2.5 py-1.5 bg-[#50121E] text-white hover:bg-[#681A28] rounded-lg transition-colors whitespace-nowrap font-medium"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#50121E] hover:bg-[#681A28] rounded-xl transition-all shadow-xs"
+                title="Abrir Painel de Administração"
               >
-                Painel
+                <ShieldCheck className="w-3.5 h-3.5 text-[#E6C687]" />
+                <span>Painel Lojista</span>
               </button>
               <button
                 onClick={onLogout}
-                className="p-1.5 text-stone-500 hover:text-red-700 hover:bg-stone-100 rounded-lg transition-colors"
-                title="Sair da Conta de Administradora"
+                className="p-2 text-stone-500 hover:text-red-700 hover:bg-stone-100 rounded-xl transition-colors"
+                title="Sair da Conta"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -125,17 +123,18 @@ export const Header: React.FC<HeaderProps> = ({
           ) : (
             <button
               onClick={onOpenAdmin}
-              className="p-2 text-stone-500 hover:text-[#50121E] hover:bg-stone-100 rounded-lg transition-colors"
-              title="Acesso da Lojista (Autenticação Segura)"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#50121E] bg-[#FAF7F5] hover:bg-[#F3EAE4] border border-[#50121E]/30 rounded-xl transition-all shadow-xs active:scale-95"
+              title="Acesso com Senha da Lojista"
             >
-              <Lock className="w-4 h-4" />
+              <Lock className="w-3.5 h-3.5 text-[#681A28] shrink-0" />
+              <span className="font-bold text-[#50121E]">Área da Lojista</span>
             </button>
           )}
 
           {/* Sacola Button */}
           <button
             onClick={onOpenBag}
-            className="flex items-center gap-2.5 px-4 py-2 text-sm font-medium text-white bg-[#681A28] hover:bg-[#50121E] rounded-lg shadow-sm transition-all transform active:scale-95"
+            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-[#681A28] hover:bg-[#50121E] rounded-xl shadow-xs transition-all transform active:scale-95"
             aria-label="Abrir Sacola de Prova"
           >
             <div className="relative">
@@ -146,7 +145,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </div>
-            <span className="hidden sm:inline">Sacola de Prova</span>
+            <span className="hidden sm:inline">Sacola</span>
             {bagCount > 0 && <span className="sm:hidden font-bold">({bagCount})</span>}
           </button>
         </div>

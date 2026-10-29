@@ -64,6 +64,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const getAuthToken = async (): Promise<string> => {
     if (adminToken) return adminToken;
     try {
+      const stored = localStorage.getItem('eterna_chique_admin_session');
+      if (stored) return stored;
       return (await auth.currentUser?.getIdToken()) || '';
     } catch {
       return '';
